@@ -1,0 +1,209 @@
+#------------------------------------------------------------------------------#
+# Projet de Modélisation numérique, analyse satellite de Mercure      26/05/24 #
+# Ecrit par: Alexandre Michaux, Anatole Devolder et Beniamino Orsini           #
+#------------------------------------------------------------------------------#
+
+rm(list=ls()) # Efface l'environnement pour commencer proprement
+chemin <- "/Users/alexandremichaux/Documents/Projet R Copie/" # Chemin de travail
+chemin_image <- paste0(chemin, "mercury1440x720/"); setwd(chemin) # Définit le répertoire de travail
+install.packages(paste0(chemin, "MnMercury_0.0.0.9000.tar.gz"), repos = NULL, type = "source")# Installer le package à partir du fichier tar.gz
+library(plotly); library(raster); library(fields); library(magick); library(bmp); library(abind); library(MnMercury) # Chargement des bibliothèques nécessaires
+
+pdf(file = paste0(chemin, "plots.pdf"), width = 8, height = 5) # Ouvre un fichier PDF pour sauvegarder les graphiques
+colors <- colorRampPalette(c("blue", "cyan", "green", "yellowgreen", "yellow", "orange", "orangered", "darkred"))(9) # Définit la palette de couleurs
+
+noms_fichiers <- c("mgsi", "mgsierr", "mgsires", "mgsiasym", "mgsism", "mgsierrsm", "alsi", "alsierr", "alsires", "alsiasym", "alsism", "alsierrsm",
+                   "ssi", "ssierr", "ssires", "ssiasym", "ssism", "ssierrsm", "casi", "casierr", "casires", "casiasym", "casism", "casierrsm",
+                   "fesi", "fesierr", "fesires", "fesiasym", "fesism", "fesierrsm", "subregions_Nittler_Vflip", "DEM", "Density", "Crustl", "Melt") # Liste des fichiers à traiter
+
+facteurs_correction <- c(0.860023 / 255.0, 0.223226 / 255.0, 1956.86 / 255.0, 8.45057 / 255.0, 0.782055 / 255.0, 0.149478 / 255.0,
+                         0.402477 / 255.0, 0.153596 / 255.0, 1916.09 / 255.0, 8.45057 / 255.0, 0.352960 / 255.0, 0.0836231 / 255.0,
+                         0.161680 / 255.0, 0.0398775 / 255.0, 2696.96 / 255.0, 4.01162 / 255.0, 0.146785 / 255.0, 0.103813 / 255.0,
+                         0.318000 / 255.0, 0.0809775 / 255.0, 2694.97 / 255.0, 5.01293 / 255.0, 0.316247 / 255.0, 0.194069 / 255.0,
+                         0.117737 / 255.0, 0.0283532 / 255.0, 2893.93 / 255.0, 4.97544 / 255.0, 0.0982359 / 255.0, 0.0281902 / 255.0) # Facteurs de correction
+
+sample_matrix <- read_and_correct_bmp(noms_fichiers[1], facteurs_correction[1], chemin_image) # Lit le premier fichier pour obtenir les dimensions
+dimensions <- dim(sample_matrix) # Obtient les dimensions de la matrice échantillon
+lasagne <- array(NA, dim = c(dimensions[1], dimensions[2], length(noms_fichiers))) # Initialise un tableau 3D pour stocker les données
+
+for (i in seq_along(noms_fichiers)[1:(length(noms_fichiers) - 4)]) lasagne[,,i] <- read_and_correct_bmp(noms_fichiers[i], facteurs_correction[i], chemin_image) # Remplit le tableau avec les matrices corrigées
+
+dimnames(lasagne) <- list(NULL, NULL, noms_fichiers) # Attribue des noms de couche
+
+DEM_Mercury <- raster("DEM.tif") # Charge le fichier DEM de Mercure
+new_resolution_x <- ncol(DEM_Mercury) / 1440; new_resolution_y <- nrow(DEM_Mercury) / 720 # Calcule la nouvelle résolution pour adapter la taille de la grille
+
+# Redimensionnement du raster selon la nouvelle résolution calculée
+DEM_Mercury_resized <- if (new_resolution_x > 1 && new_resolution_y > 1) aggregate(DEM_Mercury, fact = c(new_resolution_x, new_resolution_y)) else disaggregate(DEM_Mercury, fact = c(ceil(1 / new_resolution_x), ceil(1 / new_resolution_y)))
+
+DEM_NEW <- transform_matrix(as.matrix(DEM_Mercury_resized) * 0.5) # Transforme le raster redimensionné en matrice
+lasagne[,,length(noms_fichiers) - 3] <- DEM_NEW # Ajoute la matrice transformée dans la couche DEM
+
+data_density <- read.table("DensityGrid.dat", header=FALSE) # Lit les données de densité
+lasagne[,,length(noms_fichiers) - 2] <- transform_matrix(from03602180(as.matrix(data_density))) # Ajoute la matrice transformée de densité
+
+lines <- gsub(",\\s+", ",", gsub("(\\d)\\s+(\\d)", "\\1,\\2", readLines("CrustalThickness_ModelV1.csv"))) # Nettoie les données CSV
+writeLines(lines, "Modified_CrustalThickness_ModelV1.csv") # Écrit les données nettoyées
+donnees <- read.csv("Modified_CrustalThickness_ModelV1.csv", header=FALSE) # Lit les données nettoyées
+lasagne[,,length(noms_fichiers) - 1] <- transform_matrix(from03602180(as.matrix(donnees[,-1]))) # Ajoute la matrice transformée de l'épaisseur de la croûte
+
+data_matrix_melt <- read.table("MeltGrid.dat", header=FALSE) # Lit les données de fusion
+lasagne[,,length(noms_fichiers)] <- transform_matrix(from03602180(as.matrix(data_matrix_melt))) # Ajoute la matrice transformée de fusion
+
+print(dim(lasagne)) # Vérifie les dimensions du tableau 3D
+rm(list=ls()[!ls() %in% c("lasagne", "noms_fichiers", "colors")]) # Nettoie l'environnement en supprimant les variables inutiles
+saveRDS(lasagne, "lasagne.rds") # Sauvegarde le tableau 3D
+saveRDS(noms_fichiers, "noms_fichiers.rds") # Sauvegarde les noms des fichiers
+
+
+
+
+
+
+
+
+matrice_DEM <- lasagne[,,which(noms_fichiers == "DEM")] # Extrait la matrice DEM
+matrice_DEM_3D <- matrice_DEM[nrow(matrice_DEM):1,] # Retourne l'image pour l'affichage correct
+axx <- list(title = "LATITUDE", ticketmode = 'array', ticktext = seq(-90, 90, by = 30), tickvals = seq(0, 720, by = 120), range = c(0,720)) # Axe X
+axy <- list(title = "LONGITUDE", ticketmode = 'array', ticktext = seq(180, -180, by = -30), tickvals = seq(0, 1440, by = 120), range = c(0,1440)) # Axe Y
+axz <- list(title = "", ticketmode = 'array', ticktext = c(""), tickvals = c(), range = c(-5354.4, 4260.07)) # Axe Z
+
+# Création du graphique interactif
+fig <- plot_ly(z = ~matrice_DEM_3D) %>%
+  add_surface(colorscale = list(
+    c(0, 'rgb(0, 0, 255)'),       # Bleu pour la valeur la plus basse
+    c(0.5, 'rgb(255, 255, 255)'), # Blanc pour la valeur médiane
+    c(1, 'rgb(255, 0, 0)')        # Rouge pour la valeur la plus haute
+  )) %>%
+  layout(title = "Plot 3D de la surface de Mercure", scene4 = list(xaxis=axx, yaxis=axy, zaxis=axz, aspectmode='manual',aspectratio = list(x=1, y=2, z=0.07)))
+fig # Affiche le graphique
+
+saveRDS(fig, "plot_3D_interactif.rds") # Sauvegarde du graphique interactif
+plot_matrix(matrice_DEM, "Modèle de terrain numérique de Mercure", colors, "élevation") # Affichage de la matrice DEM
+
+# Trouver la position et l'élévation maximales
+position_max <- which(matrice_DEM == max(matrice_DEM), arr.ind = TRUE)
+dim(matrice_DEM)
+ligne_max <- position_max[1, 2]; colonne_max <- position_max[1, 1] # Indices de la position maximale
+
+cat("La valeur maximale est à la ligne", ligne_max, "et la colonne", colonne_max, ".\n") # Affichage de la position maximale
+cat("l'élévation du point de le plus haut de Mercure est de", max(matrice_DEM), "m.\n") # Affichage de l'élévation maximale
+
+ligne_selectionnee <- as.vector(matrice_DEM[, ligne_max]) # Ligne maximale en vecteur
+colonne_selectionnee <- as.vector(matrice_DEM[colonne_max, ]) # Colonne maximale en vecteur
+ligne1_y <- colonne_max / 1440; ligne2_x <- ligne_max / 720 # Positions normalisées pour l'affichage
+
+
+lines(x = c(0, 1), y = c(ligne2_x, ligne2_x), col = "blue", lwd = 2) # Ligne bleue pour la coupe 1
+lines(x = c(ligne1_y, ligne1_y), y = c(0, 1), col = "red", lwd = 2) # Ligne rouge pour la coupe 2
+text(x = 0.7, y = ligne2_x, label = 'coupe 1', pos = 3, cex = 1, col = "blue") # Étiquette pour la coupe 1
+text(x = 0.30, y = 0.85, label = 'coupe 2', pos = 3, cex = 1, col = "red") # Étiquette pour la coupe 2
+
+# Tracé de la courbe de la ligne sélectionnée
+plot(ligne_selectionnee, type = "l", col = "blue", lwd = 2, main = "Courbe topographique en fonction de la longitude", xlab = "Position", ylab = "Altitude", axes = FALSE)
+axis(1, at = seq(0, 1440, by = 120), labels = seq(-180, 180, by = 30)) # Axe X
+axis(2, at = seq(-5000, 5000, by = 1000), labels = seq(-5000, 5000, by = 1000)) # Axe Y
+axis(4, at = seq(-5000, 5000, by = 1000), labels = seq(-5000, 5000, by = 1000)) # Axe Y droite
+
+# Tracé de la courbe de la colonne sélectionnée
+plot(colonne_selectionnee, type = "l", col = "red", lwd = 2, main = "Courbe topographique en fonction de la latitude", xlab = "Position", ylab = "Altitude", axes = FALSE)
+axis(1, at = seq(0, 720, by = 120), labels = seq(-90, 90, by = 30)) # Axe X
+axis(2, at = seq(-5000, 5000, by = 1000), labels = seq(-5000, 5000, by = 1000)) # Axe Y
+axis(4, at = seq(-5000, 5000, by = 1000), labels = seq(-5000, 5000, by = 1000)) # Axe Y droite
+
+rm(list=ls()[!ls() %in% c("lasagne", "noms_fichiers", "colors")]) # Nettoyage des variables inutilisées
+
+matrice_density <- lasagne[,,which(noms_fichiers == "Density")] # Extraction de la matrice de densité
+plot_matrix(matrice_density, "Carte de la densité à la surface de Mercure", colors, "Densité") # Affichage de la matrice
+
+rm(list=ls()[!ls() %in% c("lasagne", "noms_fichiers", "colors")]) # Nettoyage des variables inutilisées
+
+
+
+
+
+
+
+
+
+matrice_mgsi <- lasagne[, , noms_fichiers == "mgsi"] # Extraction de la matrice Mg/Si
+noniles <- quantile(matrice_mgsi, probs = seq(0.1, 0.9, by = 0.1)) # Calcul des noniles
+labels <- c("Very Very Low", "Very Low", "Low", "Medium Low", "Medium", "Medium High", "High", "Very High", "Very Very High") # Étiquettes de classification
+
+# Classification des valeurs
+density_classes <- cut(as.vector(matrice_mgsi), breaks = c(noniles, Inf), labels = labels, include.lowest = TRUE)
+class_matrix <- matrix(as.numeric(density_classes), nrow = nrow(matrice_mgsi), byrow = FALSE)
+
+plot_matrix(class_matrix, "Carte du rapport Mg/Si de Mercure", colors, "rapport") # Affichage de la matrice classée
+plot_matrix(class_matrix, "Division des secteurs", colorRampPalette(c("white", "black"))(9),"") # Affichage des secteurs
+
+row_interval <- nrow(class_matrix) / 6; col_interval <- ncol(class_matrix) / 6 # Calcul des intervalles pour les secteurs
+
+# Étiquettes de secteur
+for (i in 0:5) for (j in 0:5) text(x = 0.083333 + 0.1666666 * j, y = 0.916667 - 0.1666666 * i, labels = paste0(LETTERS[i + 1], j + 1), col = "red", cex = 1)
+
+sub_matrices_mgsi <- create_sub_matrices(matrice_mgsi, row_interval, col_interval) # Création des sous-matrices
+mean_values_mgsi <- sapply(sub_matrices_mgsi, function(x) mean(x, na.rm = TRUE)) # Calcul des moyennes des sous-matrices
+mean_table_mgsi <- data.frame(Sector = names(mean_values_mgsi), Mean = mean_values_mgsi) # Tableau des moyennes
+
+print(mean_table_mgsi) # Affichage des moyennes
+max_mean_sector_mgsi <- names(mean_values_mgsi)[which.max(mean_values_mgsi)]; cat("Le secteur avec la valeur moyenne la plus élevée est", max_mean_sector_mgsi, "avec une moyenne de", max(mean_values_mgsi), ".\n") # Secteur avec la moyenne la plus élevée
+
+barplot(mean_values_mgsi, names.arg = names(mean_values_mgsi), las = 2, col = "lightblue", main = "Valeurs Moyennes par Secteur", xlab = "Secteurs", ylab = "Valeur Moyenne", cex.names = 0.8, ylim = c(0, 1)) # Histogramme des moyennes
+
+matrices <- list(mgsi = matrice_mgsi, casi = lasagne[, , noms_fichiers == "casi"], alsi = lasagne[, , noms_fichiers == "alsi"], ssi = lasagne[, , noms_fichiers == "ssi"], fesi = lasagne[, , noms_fichiers == "fesi"]) # Listes des matrices pour calculer les compositions normalisées
+mean_values <- sapply(matrices, function(matrix) mean(matrix, na.rm = TRUE)) # Calcul des moyennes
+
+calculate_normalized_composition_from_means <- function(means) { # Fonction pour calculer la composition normalisée
+  total_moles <- 1 + sum(means)
+  percentages <- c(1, means) / total_moles * 100
+  names(percentages) <- c("Si", "Mg", "Ca", "Al", "Fe", "S")
+  return(percentages)
+}
+
+normalized_composition_means <- calculate_normalized_composition_from_means(mean_values) # Composition normalisée
+print(normalized_composition_means) # Affichage de la composition
+pie(normalized_composition_means, main = "Composition normalisée de la surface de Mercure", col = rainbow(length(normalized_composition_means)), clockwise = TRUE) # Diagramme en camembert
+
+sub_class_matrix <- create_sub_matrices(class_matrix, row_interval, col_interval) # Zoom sur un secteur spécifique
+secteur <- "A1"; main_title <- paste("Zoom sur", secteur)
+zoom <- as.matrix(sub_class_matrix[[secteur]]); par(mar = c(7, 6, 6, 7) - 0.7)
+image.plot(zoom, col = colors, main = main_title, axes = FALSE)
+
+rm(list = ls()[!ls() %in% c("lasagne", "noms_fichiers", "colors")]) # Nettoyage des variables inutilisées
+
+matrice_Thick <- lasagne[,,which(noms_fichiers == "Crustl")] # Extraction de la matrice Crustl
+matrice_melt <- lasagne[,,which(noms_fichiers == "Melt")] # Extraction de la matrice Melt
+correlation <- cor(c(matrice_Thick), c(matrice_melt)) # Calcul du coefficient de corrélation
+print(correlation) # Affichage du coefficient
+rm(list=ls()[!ls() %in% c("lasagne", "noms_fichiers", "colors")]) # Nettoyage des variables inutilisées
+
+analyse_regression <- function(nom_couche) { # Fonction pour analyser la régression linéaire
+  matrice_density <- lasagne[,,which(noms_fichiers == "Density")]
+  matrice_chim <- lasagne[,,which(noms_fichiers == nom_couche)]
+  
+  # Filtrer les valeurs positives
+  matrice_density <- matrice_density[matrice_chim > 0]; matrice_chim <- matrice_chim[matrice_chim > 0]
+  
+  if (length(matrice_density) == 0 || length(matrice_chim) == 0) {warning(paste("Pas de valeurs positives pour la couche", nom_couche)); return(NA)} # Vérifie si les matrices sont non vides
+  
+  sample_size <- 10000; if (sample_size > length(matrice_density)) {sample_size <- length(matrice_density); warning(paste("Sample size réduit à", sample_size, "pour la couche", nom_couche))} # Taille de l'échantillon
+  positions <- sample(1:length(matrice_density), sample_size); valeurs_matrice_dens <- matrice_density[positions]; valeurs_matricechim <- matrice_chim[positions] # Échantillonnage
+  
+  plot(valeurs_matrice_dens, valeurs_matricechim, xlab = "Density", ylab = paste("Rapport", nom_couche), main = paste("Régression linéaire pour", nom_couche)) # Graphique de points
+  model <- lm(valeurs_matricechim ~ valeurs_matrice_dens) # Calcul du modèle de régression
+  abline(model, col = "red") # Ajout de la ligne de régression
+  r_squared <- summary(model)$r.squared # Calcul du coefficient de détermination (R^2)
+  legend("bottomright", legend = paste("R^2 =", round(r_squared, 4)), bty = "n") # Affichage du coefficient de détermination (R^2)
+  return(r_squared)
+}
+
+couches <- c("mgsi", "alsi", "ssi", "casi", "fesi") # Liste des couches à analyser
+resultats_reg <- data.frame(Couche = character(), R_squared = numeric(), stringsAsFactors = FALSE) # Initialisation du tableau de résultats
+
+for (couche in couches) {r_squared <- analyse_regression(couche); resultats_reg <- rbind(resultats_reg, data.frame(Couche = couche, R_squared = r_squared))} # Analyse et stockage des résultats
+print(resultats_reg) # Affichage des résultats
+saveRDS(resultats_reg, "Distribution de la régression.rds") # Sauvegarde des résultats
+rm(list=ls()) # Nettoyage de l'environnement
+dev.off() # Fermeture du fichier PDF
+

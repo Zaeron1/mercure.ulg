@@ -1,0 +1,65 @@
+#' Plot a 3D Array Layer or a Provided Matrix with Plotly
+#'
+#' This function creates an interactive heatmap plot using Plotly, displaying either a specified layer from a 3-dimensional array or a provided matrix.
+#'
+#' @param layer_index_or_name Numeric or Matrix. If numeric, it is the index of the layer to be extracted and plotted from `result_array`. If a matrix, the matrix will be plotted directly.
+#' @param main_title Character. The main title of the plot.
+#' @param legend_name Character. The label for the color legend.
+#' @param color_palette Function. A color palette function that generates the colors for the plot.
+#'
+#' @details
+#' This function leverages Plotly to create an interactive heatmap from a matrix or a specific layer from a 3-dimensional array named `result_array`. The plot includes customized axes labels for longitude and latitude and a color legend to represent values in the matrix.
+#'
+#' @return A Plotly object. The function returns an interactive heatmap plot.
+#'
+#' @examples
+#' \dontrun{
+#' # Assuming `result_array` is a 3D array with suitable dimensions
+#' plot_matrix_plotly(1, "Sample Plot", "Legend", colorRampPalette(c("blue", "yellow", "red")))
+#'
+#' # Using a predefined matrix
+#' my_matrix <- matrix(1:100, nrow = 10)
+#' plot_matrix(my_matrix, "My Matrix Plot", "Values", colorRampPalette(c("blue", "green", "red")))
+#' }
+#'
+#' @importFrom plotly plot_ly layout
+#'
+#' @export
+plot_matrix <- function(layer_index_or_name, main_title, legend_name, color_palette) {
+  # Check the input type and extract the matrix
+  if (is.matrix(layer_index_or_name)) {
+    # Use the input directly if it's a matrix
+    layer_matrix <- layer_index_or_name
+  } else if (is.numeric(layer_index_or_name)) {
+    # Treat the input as a layer index if it's numeric
+    if (layer_index_or_name < 1 || layer_index_or_name > dim(result_array)[3]) {
+      stop("Layer index out of bounds.")
+    }
+    # Extract the specified layer as a matrix
+    layer_matrix <- get_layer_as_matrix(result_array, layer_index_or_name)
+  } else {
+    stop("The input must be either a matrix or a numeric index of a layer.")
+  }
+
+  # Create a plotly heatmap
+  plot_ly(
+    z = layer_matrix,
+    type = "heatmap",
+    colors = colorRamp(c("blue", "cyan", "yellowgreen", "yellow", "orange", "orangered", "darkred")),
+    showscale = TRUE,
+    colorbar = list(title = legend_name)
+  ) %>%
+    layout(
+      title = main_title,
+      xaxis = list(
+        title = "Longitude",
+        tickvals = seq(0, ncol(layer_matrix), by = ncol(layer_matrix) / 12),
+        ticktext = paste0(seq(-180, 180, length.out = 13), "°")
+      ),
+      yaxis = list(
+        title = "Latitude",
+        tickvals = seq(0, nrow(layer_matrix), by = nrow(layer_matrix) / 12),
+        ticktext = paste0(seq(90, -90, length.out = 13), "°"), autorange = "reversed"
+      )
+    )
+}

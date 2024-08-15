@@ -1,0 +1,10 @@
+
+
+
+
+
+composition<- function(result_array, index_matrice) {
+  
+  for (index in index_matrice) {
+    # Extraction de la matrice chimique
+    matrice <- get_layer_as_matrix(result_array, index)

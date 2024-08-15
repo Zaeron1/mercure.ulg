@@ -1,0 +1,223 @@
+#------------------------------------------------------------------------------#
+# Mercury data aggregation         V0.1                             28/02/2024 #
+# cont@ct: Philippe Cerfontaine (philippe.cerfontaine@uliege.be)               #
+#------------------------------------------------------------------------------#
+
+# init remove all lists from memory
+rm(list=ls())
+
+# include necessary libraries here
+library(bmp)
+# necessary to reads geo-tiff files
+library(raster)
+
+# set working directory
+# !!! insert your working directory here !!!
+setwd( "C:/MeRcury" )
+
+# declare variables and constants ##############################################
+
+# declare functions ############################################################
+
+# permute the two parts to map longitudes from [0°;360°] to [-180°;180°]
+# in case of an odd number of columns the last column gets dropped
+from03602180 <- function( mat ) {
+  middle <- dim(mat)[2]/2
+  mat1 <- mat[,1:middle]
+  mat2 <- mat[,(middle+1):(2*middle)]
+  return(cbind(mat2,mat1))
+}
+
+#------------------------------------------------------------------------------#
+# Digital Elevation Model                                                      # 
+#------------------------------------------------------------------------------#
+
+# 665.24315270546 m/pixel
+# 64 pixel/deg°
+# 1° = 64 x 665.24 pixel (degree to meter factor)
+# 0.000023487652501878593 (meter to degree factor)
+# elevation scale factor 0.5
+dem <- as.matrix(raster("Mercury_Messenger_USGS_DEM_Global_665m_v2.tif") * 0.5)
+dem <- from03602180(dem)
+
+#rownames(dem) <-       seq(   90, -90, by = -180/(dim(dem)[1]-1) )
+#colnames(dem) <- head( seq( -180, 180, by =  360/ dim(dem)[2]    ), -1 )
+
+# save the data cube with digital elevation data
+saveRDS(dem, file = "MeRcuby_11520x23040_dem.rds",
+        ascii = FALSE, compress = TRUE)
+
+remove(dem)
+
+
+#------------------------------------------------------------------------------#
+# geo-chemical data                                                              # 
+#------------------------------------------------------------------------------#
+
+# look up table for subregions Nittler
+# pixel value  region
+# 0            no region
+# 1		         high-al
+# 2		         Al-rich
+# 3		         Caloris
+# 4		         Rach
+# 5		         high-al NVP
+# 6		         low-al NVP
+region <- read.bmp("subregions_Nittler_Vflip.bmp")
+region_names <-
+  c("high-al", "Al-rich", "Caloris", "Rach", "high-al NVP", "low-al NVP")
+
+# infer the row and column dimensions from the first data set
+nmbr_row <- dim(region)[1]
+nmbr_col <- dim(region)[2]
+# set the number of data fields (3D lasagna layers)
+n_matrices <- 35
+
+# load data from files and convert 8bit gray scale to concentration fractions
+# Mg/Si
+mgsi      <- read.bmp("mgsi.bmp")      * (0.860023/255.0)
+mgsierr   <- read.bmp("mgsierr.bmp")   * (0.223226/255.0)
+mgsires   <- read.bmp("mgsires.bmp")   * ( 1956.86/255.0)
+mgsiasym  <- read.bmp("mgsiasym.bmp")  * ( 8.45057/255.0)
+mgsism    <- read.bmp("mgsism.bmp")    * (0.782055/255.0)
+mgsierrsm <- read.bmp("mgsierrsm.bmp") * (0.149478/255.0)
+
+# Al/Si
+alsi      <- read.bmp("alsi.bmp")      * ( 0.402477/255.0)
+alsierr   <- read.bmp("alsierr.bmp")   * ( 0.153596/255.0)
+alsires   <- read.bmp("alsires.bmp")   * (  1916.09/255.0)
+alsiasym  <- read.bmp("alsiasym.bmp")  * (  8.45057/255.0)
+alsism    <- read.bmp("alsism.bmp")    * ( 0.352960/255.0)
+alsierrsm <- read.bmp("alsierrsm.bmp") * (0.0836231/255.0)
+
+# S/Si
+ssi       <- read.bmp("ssi.bmp")       * ( 0.161680/255.0)
+ssierr    <- read.bmp("ssierr.bmp")    * (0.0398775/255.0)
+ssires    <- read.bmp("ssires.bmp")    * (  2696.96/255.0)
+ssiasym   <- read.bmp("ssiasym.bmp")   * (  4.01162/255.0)
+ssism     <- read.bmp("ssism.bmp")     * ( 0.146785/255.0)
+ssierrsm  <- read.bmp("ssierrsm.bmp")  * ( 0.103813/255.0)
+
+# Ca/Si
+casi      <- read.bmp("casi.bmp")      * ( 0.318000/255.0)
+casierr   <- read.bmp("casierr.bmp")   * (0.0809775/255.0)
+casires   <- read.bmp("casires.bmp")   * (  2694.97/255.0)
+casiasym  <- read.bmp("casiasym.bmp")  * (  5.01293/255.0)
+casism    <- read.bmp("casism.bmp")    * ( 0.316247/255.0)
+casierrsm <- read.bmp("casierrsm.bmp") * ( 0.194069/255.0)
+
+# Fe/Si
+fesi      <- read.bmp("fesi.bmp")      * ( 0.117737/255.0)
+fesierr   <- read.bmp("fesierr.bmp")   * (0.0283532/255.0)
+fesires   <- read.bmp("fesires.bmp")   * (  2893.93/255.0)
+fesiasym  <- read.bmp("fesiasym.bmp")  * (  4.97544/255.0)
+fesism    <- read.bmp("fesism.bmp")    * (0.0982359/255.0)
+fesierrsm <- read.bmp("fesierrsm.bmp") * (0.0281902/255.0)
+
+# consistency check data sets dimensions
+stopifnot(
+  nmbr_row == dim(mgsi)[1], nmbr_row == dim(mgsierr)[1],
+  nmbr_row == dim(mgsires)[1], nmbr_row == dim(mgsiasym)[1],
+  nmbr_row == dim(mgsism)[1], nmbr_row == dim(mgsierrsm)[1] )
+stopifnot(
+  nmbr_col == dim(mgsi)[2], nmbr_col == dim(mgsierr)[2],
+  nmbr_col == dim(mgsires)[2], nmbr_col == dim(mgsiasym)[2],
+  nmbr_col == dim(mgsism)[2], nmbr_col == dim(mgsierrsm)[2] )
+stopifnot(
+  nmbr_row == dim(alsi)[1], nmbr_row == dim(alsierr)[1],
+  nmbr_row == dim(alsires)[1], nmbr_row == dim(alsiasym)[1],
+  nmbr_row == dim(alsism)[1], nmbr_row == dim(alsierrsm)[1] )
+stopifnot(
+  nmbr_col == dim(alsi)[2], nmbr_col == dim(alsierr)[2],
+  nmbr_col == dim(alsires)[2], nmbr_col == dim(alsiasym)[2],
+  nmbr_col == dim(alsism)[2], nmbr_col == dim(alsierrsm)[2] )
+stopifnot(
+  nmbr_row == dim(ssi)[1], nmbr_row == dim(ssierr)[1],
+  nmbr_row == dim(ssires)[1], nmbr_row == dim(ssiasym)[1],
+  nmbr_row == dim(ssism)[1], nmbr_row == dim(ssierrsm)[1] )
+stopifnot(
+  nmbr_col == dim(ssi)[2], nmbr_col == dim(ssierr)[2],
+  nmbr_col == dim(ssires)[2], nmbr_col == dim(ssiasym)[2],
+  nmbr_col == dim(ssism)[2], nmbr_col == dim(ssierrsm)[2] )
+stopifnot(
+  nmbr_row == dim(casi)[1], nmbr_row == dim(casierr)[1],
+  nmbr_row == dim(casires)[1], nmbr_row == dim(casiasym)[1],
+  nmbr_row == dim(casism)[1], nmbr_row == dim(casierrsm)[1] )
+stopifnot(
+  nmbr_col == dim(casi)[2], nmbr_col == dim(casierr)[2],
+  nmbr_col == dim(casires)[2], nmbr_col == dim(casiasym)[2],
+  nmbr_col == dim(casism)[2], nmbr_col == dim(casierrsm)[2] )
+stopifnot(
+  nmbr_row == dim(fesi)[1], nmbr_row == dim(fesierr)[1],
+  nmbr_row == dim(fesires)[1], nmbr_row == dim(fesiasym)[1],
+  nmbr_row == dim(fesism)[1], nmbr_row == dim(fesierrsm)[1] )
+stopifnot(
+  nmbr_col == dim(fesi)[2], nmbr_col == dim(fesierr)[2],
+  nmbr_col == dim(fesires)[2], nmbr_col == dim(fesiasym)[2],
+  nmbr_col == dim(fesism)[2], nmbr_col == dim(fesierrsm)[2] )
+
+# calculate least squares as error metric layer and add it to the pile
+lsq_err <-
+  mgsierr * mgsierr + alsierr * alsierr + ssierr  * ssierr  +
+  casierr * casierr + fesierr * fesierr
+
+# read tabular data into R
+den_gd <-
+  as.matrix(read.table("DensityGrid.dat", header=FALSE, sep="\t", dec="."))
+den_gd <- from03602180(den_gd)
+
+mel_gd <-
+  as.matrix(read.table(   "MeltGrid.dat", header=FALSE, sep="\t", dec="."))
+den_gd <- from03602180(den_gd)
+
+# Read crustal thickness data and remove the empty first column
+# then convert text data to numeric values
+# NB: CrustalThickness_ModelV0.dat is bogus so using V1 instead
+ct_mod_V1 <-
+  as.matrix(read.csv("CrustalThickness_ModelV1.csv",
+                      header = FALSE, sep = ",", dec = "." )[-1])
+
+row_names <- seq(  89.875, -89.875, by = -0.25 )
+col_names <- seq(-179.875, 179.875, by =  0.25 )
+matrix_names <- c(
+"region", "den_gd", "mel_gd", "ct_mod_V1",
+"mgsi", "mgsierr", "mgsires", "mgsiasym", "mgsism", "mgsierrsm",
+"alsi", "alsierr", "alsires", "alsiasym", "alsism", "alsierrsm",
+"ssi",  "ssierr",  "ssires",  "ssiasym",  "ssism",  "ssierrsm",
+"casi", "casierr", "casires", "casiasym", "casism", "casierrsm",
+"fesi", "fesierr", "fesires", "fesiasym", "fesism", "fesierrsm", "lsq_err" )
+
+# aggregate all data sets to one large array
+lasagna <- array( c(
+region, den_gd, mel_gd, ct_mod_V1,
+mgsi, mgsierr, mgsires, mgsiasym, mgsism, mgsierrsm,
+alsi, alsierr, alsires, alsiasym, alsism, alsierrsm,
+ssi,  ssierr,  ssires,  ssiasym,  ssism,  ssierrsm,
+casi, casierr, casires, casiasym, casism, casierrsm,
+fesi, fesierr, fesires, fesiasym, fesism, fesierrsm, lsq_err ),
+dim = c( nmbr_row, nmbr_col, n_matrices ),
+dimnames = list(row_names,col_names,matrix_names) )
+
+# free memory by releasing all variables containing the individual layers
+remove(
+region, den_gd, mel_gd, ct_mod_V1,
+mgsi, mgsierr, mgsires, mgsiasym, mgsism, mgsierrsm,
+alsi, alsierr, alsires, alsiasym, alsism, alsierrsm,
+ssi,  ssierr,  ssires,  ssiasym,  ssism,  ssierrsm,
+casi, casierr, casires, casiasym, casism, casierrsm,
+fesi, fesierr, fesires, fesiasym, fesism, fesierrsm )
+
+# save the data cube with geo-chemical data
+saveRDS(lasagna,
+        file = paste("MeRcuby_" ,
+                     dim(lasagna)[1], "x",
+                     dim(lasagna)[2], "x",
+                     dim(lasagna)[3], "_geochem.rds"),
+        ascii = FALSE, compress = TRUE)
+
+remove(lasagna)
+
+
+#------------------------------------------------------------------------------#
+# End                                                                          # 
+#------------------------------------------------------------------------------#

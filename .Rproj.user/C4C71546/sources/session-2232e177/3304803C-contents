@@ -1,0 +1,9 @@
+get_layer_as_matrix <- function(result_array, layer_index) {
+
+  if (layer_index < 1 || layer_index > dim(result_array)[3]) {
+    stop("Layer index out of bounds.")
+  }
+
+  # Extrait et retourne la couche spécifiée sous forme de matrice
+  return(result_array[,,layer_index])
+}

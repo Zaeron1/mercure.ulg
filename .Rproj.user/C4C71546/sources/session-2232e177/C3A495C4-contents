@@ -1,0 +1,11 @@
+from03602180 <- function(mat) {
+  # Calculate the middle index of the columns
+  middle <- dim(mat)[2] / 2
+
+  # Split the matrix into two halves
+  mat1 <- mat[, 1:middle]
+  mat2 <- mat[, (middle + 1):(2 * middle)]
+
+  # Combine the halves with their positions swapped
+  return(cbind(mat2, mat1))
+}

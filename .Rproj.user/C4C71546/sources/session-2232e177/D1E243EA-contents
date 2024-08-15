@@ -1,0 +1,80 @@
+rm(list=ls())
+base_path <- "/Users/alexandremichaux/Documents/mercure.ulg"#mettre le chemin du dossier télécharger
+directory_path <- file.path(base_path, "mercury1440x720")
+install.packages(file.path(base_path, "mercure.ulg_0.1.0.tar.gz"), repos = NULL, type = "source")
+library(plotly); library(raster); l; library(bmp);library(mercure.ulg) #s'assurer que les packages on déja été installés
+
+process_files_to_3d_array <- function(directory_path, correction_factors, target_dim = c(720, 1440)) {
+  # Get the list of files in the directory
+  file_list <- list.files(directory_path, full.names = TRUE)
+  n_files <- length(file_list)
+  # Initialize an empty 3D array
+  array_3d <- array(0, dim = c(target_dim[1], target_dim[2], n_files))
+  # Initialize a vector to store file names (layers)
+  layer_names <- basename(file_list)
+  # Define a helper function to apply correction factor
+  apply_correction <- function(matrix, correction_factor) {
+    if (is.null(correction_factor)) correction_factor <- 1
+    matrix * correction_factor
+  }
+  # Process each file
+  for (i in seq_along(file_list)) {
+    file_path <- file_list[i]
+    file_name <- layer_names[i]
+    file_extension <- tolower(tools::file_ext(file_name))
+    if (file_extension == "bmp") {
+      # Read BMP file and apply correction
+      bmp_matrix <- read.bmp(file_path)
+      corrected_matrix <- apply_correction(bmp_matrix, correction_factors[[file_name]])
+      array_3d[,,i] <- corrected_matrix
+    } else if (file_extension == "dat") {
+      # Read DAT file
+      data_matrix <- from03602180(as.matrix(read.table(file_path, header = FALSE)))
+      array_3d[,,i] <- data_matrix
+    } else if (file_extension == "tif") {
+      # Read and resize TIF file
+      tif_raster <- raster(file_path)
+      resize_factor <- c(max(1, ncol(tif_raster) / target_dim[2]), max(1, nrow(tif_raster) / target_dim[1]))
+      resized_raster <- aggregate(tif_raster, fact = resize_factor)
+      resized_matrix <- as.matrix(resized_raster, ncol = target_dim[2], nrow = target_dim[1])
+      array_3d[,,i] <- resized_matrix
+    } else if (file_extension == "csv") {
+      # Read and clean CSV file
+      lines <- gsub(",\\s+", ",", gsub("(\\d)\\s+(\\d)", "\\1,\\2", readLines(file_path)))
+      temp_file <- tempfile(fileext = ".csv")
+      writeLines(lines, temp_file)
+      donnees <- read.csv(temp_file, header = FALSE)
+      matrix_csv <- from03602180(as.matrix(donnees[,-1]))
+      array_3d[,,i] <- matrix_csv
+      unlink(temp_file)
+    } else {
+      warning(paste("File type not supported:", file_extension, "for file", file_name))
+    }
+  }
+
+  # Print layer names and indices
+  layer_info <- data.frame(Index = seq_along(layer_names), Layer = layer_names)
+  print(layer_info)
+
+  # Return the 3D array
+  return(array_3d)
+}
+correction_factors <- list("mgsi.bmp" = 0.860023 / 255.0, "alsi.bmp" = 0.402477 / 255.0, "ssi.bmp"= 0.161680 / 255.0, "calsi.bmp"= 0.318000 / 255.0, "fesi.bmp"= 0.117737 / 255.0 )
+
+result_array <- process_files_to_3d_array(directory_path, correction_factors)
+rm(list=ls()[!ls() %in% c("result_array")])
+test <-get_layer_as_matrix(result_array, layer_index = 10)
+plot_matrix(4,"DEM de mercure","Elevation",color_palette = colorRampPalette(c("blue", "cyan", "yellowgreen", "yellow", "orange", "orangered", "darkred"))(9))
+Classy <- classify_matrix(8)
+plot_matrix(Classy, "Carte des deciles du rapport Mg/Si", "Décile", colorRampPalette(c("blue", "cyan", "yellowgreen", "yellow", "orange", "orangered", "darkred"))(9))
+plot_max_elevation(4)
+plot_3D_surface(4,"DEM 3D")
+analyse_regressions(result_array,5,c(1,2,6,8,9))
+correl(result_array, 3, 7)
+plot_matrix(10,"Région de Mercure","N° de région",color_palette = colorRampPalette(c("blue", "cyan", "yellowgreen", "yellow", "orange", "orangered", "darkred"))(7))
+region(result_array,10, 8)
+generate_histograms(8, 10)
+
+
+
+

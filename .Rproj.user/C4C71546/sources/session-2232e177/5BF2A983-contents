@@ -1,0 +1,61 @@
+analyse_regressions <- function(density_index, compare_indices) {
+  # Initialisation du tableau de résultats
+  resultats_reg <- data.frame(Couche = character(), R_squared = numeric(), stringsAsFactors = FALSE)
+
+  # Extraction de la matrice de densité
+  matrice_density <- get_layer_as_matrix(result_array, density_index)
+
+  for (index in compare_indices) {
+    # Extraction de la matrice chimique
+    matrice_chim <- get_layer_as_matrix(result_array, index)
+
+    # Filtrer les valeurs positives
+    matrice_density_filtered <- matrice_density[matrice_chim > 0]
+    matrice_chim_filtered <- matrice_chim[matrice_chim > 0]
+
+    # Vérifier si les matrices sont non vides
+    if (length(matrice_density_filtered) == 0 || length(matrice_chim_filtered) == 0) {
+      warning(paste("Pas de valeurs positives pour l'indice", index))
+      r_squared <- NA
+    } else {
+      # Déterminer la taille de l'échantillon
+      sample_size <- min(10000, length(matrice_density_filtered))
+      if (sample_size < 10000) {
+        warning(paste("Sample size réduit à", sample_size, "pour l'indice", index))
+      }
+
+      # Échantillonnage
+      positions <- sample(1:length(matrice_density_filtered), sample_size)
+      valeurs_matrice_dens <- matrice_density_filtered[positions]
+      valeurs_matrice_chim <- matrice_chim_filtered[positions]
+
+      # Calcul du modèle de régression
+      model <- lm(valeurs_matrice_chim ~ valeurs_matrice_dens)
+
+      # Calcul du coefficient de détermination (R^2)
+      r_squared <- summary(model)$r.squared
+
+      # Création du graphique interactif
+      plot <- plot_ly() %>%
+        add_trace(x = ~valeurs_matrice_dens, y = ~valeurs_matrice_chim, type = 'scatter', mode = 'markers',
+                  marker = list(color = 'blue'), name = 'Data Points') %>% # Afficher seulement les points de données
+        add_trace(x = ~valeurs_matrice_dens, y = fitted(model), mode = 'lines', line = list(color = 'red', width = 2), name = 'Regression Line') %>% # Ligne de régression
+        layout(title = paste("Régression linéaire pour l'indice", index),
+               xaxis = list(title = "Density"),
+               yaxis = list(title = paste("Rapport Indice", index)),
+               annotations = list(
+                 x = 0.5, y = -0.2, xref = 'paper', yref = 'paper',
+                 text = paste("R^2 =", round(r_squared, 4)),
+                 showarrow = FALSE
+               ))
+
+      # Display the plot
+      print(plot)
+    }
+
+    # Stockage des résultats
+    resultats_reg <- rbind(resultats_reg, data.frame(Couche = paste("Indice", index), R_squared = r_squared))
+  }
+
+  return(resultats_reg)
+}
